@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dougcast-v1';
+const CACHE_NAME = 'dougcast-v2';
 const STATIC_ASSETS = [
     './',
     './index.html',
@@ -126,6 +126,23 @@ self.addEventListener('fetch', (event) => {
                             return response;
                         });
                 })
+        );
+        return;
+    }
+
+    // For HTML files - network first, cache fallback (always get latest)
+    if (request.destination === 'document' || url.pathname.endsWith('.html') || url.pathname === '/' || url.pathname === '') {
+        event.respondWith(
+            fetch(request)
+                .then((response) => {
+                    if (response.ok) {
+                        const responseClone = response.clone();
+                        caches.open(CACHE_NAME)
+                            .then((cache) => cache.put(request, responseClone));
+                    }
+                    return response;
+                })
+                .catch(() => caches.match(request).then(r => r || caches.match('./index.html')))
         );
         return;
     }
