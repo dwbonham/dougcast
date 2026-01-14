@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dougcast-v2';
+const CACHE_NAME = 'dougcast-v3';
 const STATIC_ASSETS = [
     './',
     './index.html',
@@ -62,6 +62,7 @@ self.addEventListener('fetch', (event) => {
 
     // Skip API calls and proxy requests (we want these fresh)
     if (url.href.includes('api.allorigins.win') ||
+        url.href.includes('api.codetabs.com') ||
         url.href.includes('itunes.apple.com')) {
         event.respondWith(
             fetch(request)

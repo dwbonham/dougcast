@@ -264,13 +264,12 @@
         const savePlaybackState = (state) => localStorage.setItem('dougcast_playback', JSON.stringify(state));
 
         // ==================== API Functions ====================
-        const CORS_PROXY = 'https://api.allorigins.win/get?url=';
+        const CORS_PROXY = 'https://api.codetabs.com/v1/proxy?quest=';
 
         const fetchTrendingPodcasts = async () => {
             try {
                 const response = await fetch(`${CORS_PROXY}${encodeURIComponent('https://itunes.apple.com/us/rss/toppodcasts/limit=25/json')}`);
-                const data = await response.json();
-                const parsed = JSON.parse(data.contents);
+                const parsed = await response.json();
                 return parsed.feed.entry.map((entry, index) => ({
                     id: entry.id.attributes['im:id'],
                     name: entry['im:name'].label,
@@ -291,8 +290,7 @@
             try {
                 const searchUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=podcast&entity=podcast&limit=25`;
                 const response = await fetch(`${CORS_PROXY}${encodeURIComponent(searchUrl)}`);
-                const data = await response.json();
-                const parsed = JSON.parse(data.contents);
+                const parsed = await response.json();
                 return (parsed.results || []).map(result => ({
                     id: result.collectionId?.toString() || Math.random().toString(),
                     name: result.collectionName || 'Unknown',
@@ -334,9 +332,9 @@
             try {
                 const cacheParam = bustCache ? `&_t=${Date.now()}` : '';
                 const response = await fetch(`${CORS_PROXY}${encodeURIComponent(feedUrl)}${cacheParam}`);
-                const data = await response.json();
+                const text = await response.text();
                 const parser = new DOMParser();
-                const xml = parser.parseFromString(data.contents, 'text/xml');
+                const xml = parser.parseFromString(text, 'text/xml');
                 const items = xml.querySelectorAll('item');
                 const episodes = [];
                 items.forEach((item, index) => {
@@ -1077,8 +1075,7 @@
         const lookupPodcastFeedUrl = async (podcastId) => {
             try {
                 const response = await fetch(`${CORS_PROXY}${encodeURIComponent(`https://itunes.apple.com/lookup?id=${podcastId}`)}`);
-                const data = await response.json();
-                const parsed = JSON.parse(data.contents);
+                const parsed = await response.json();
                 return parsed.results?.[0]?.feedUrl || '';
             } catch (error) {
                 console.error('Error looking up feed URL:', error);
