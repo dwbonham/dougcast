@@ -103,6 +103,9 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
 
+        // Set auth persistence to LOCAL (survives browser close and cache clear)
+        auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+
         // ==================== Auth Context ====================
         const AuthContext = createContext();
 
@@ -264,7 +267,7 @@
         const savePlaybackState = (state) => localStorage.setItem('dougcast_playback', JSON.stringify(state));
 
         // ==================== API Functions ====================
-        const CORS_PROXY = 'https://api.codetabs.com/v1/proxy?quest=';
+        const CORS_PROXY = 'https://corsproxy.io/?';
 
         const fetchTrendingPodcasts = async () => {
             try {
