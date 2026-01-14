@@ -845,7 +845,7 @@
                     if (!podcast.feedUrl) return [];
                     try {
                         const episodes = await fetchPodcastFeed(podcast.feedUrl, forceRefresh);
-                        return episodes.slice(0, 10).map(ep => ({ episode: ep, podcast }));
+                        return episodes.map(ep => ({ episode: ep, podcast }));
                     } catch (e) { return []; }
                 });
                 const results = await Promise.all(feedPromises);
