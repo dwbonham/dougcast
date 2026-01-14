@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dougcast-v9';
+const CACHE_NAME = 'dougcast-v10';
 const STATIC_ASSETS = [
     './',
     './index.html',

@@ -1,0 +1,170 @@
+DOUGCAST - HOW IT ALL WORKS
+============================
+
+THE PLAYERS
+-----------
+
+1. CLAUDE CODE
+   A robot assistant that writes code based on your instructions.
+   It saves files to your computer and can upload them to the internet.
+
+2. YOUR COMPUTER
+   The actual code files live in: /Users/dwb/Documents/DougCast/
+   - index.html (the app)
+   - sw.js (offline helper/service worker)
+   - manifest.json (app info for installing)
+
+3. GITHUB
+   Think of GitHub as Google Drive for code.
+   - Code is uploaded (pushed) to: github.com/dwbonham/dougcast
+   - GitHub Pages hosts the website for free at: dwbonham.github.io/dougcast
+   - Microsoft/GitHub pays for hosting - it's free for public projects
+
+4. FIREBASE (GOOGLE)
+   Does two things:
+
+   a) Authentication (Login)
+      - Handles "Sign in with Google"
+      - Remembers who you are
+      - Google handles all passwords/security
+
+   b) Firestore (Cloud Database)
+      - Stores your subscriptions in the cloud
+      - "Sync Now" saves your podcast list to Google's servers
+      - Logging in on another device downloads your list
+
+
+WHERE DATA LIVES
+----------------
+
+| Data                  | Where it's stored                              |
+|-----------------------|------------------------------------------------|
+| App code              | GitHub (and your Mac)                          |
+| Website hosting       | GitHub Pages                                   |
+| Your subscriptions    | Browser (localStorage) + Firebase cloud        |
+| Downloaded episodes   | Browser (IndexedDB) - STAYS ON THAT DEVICE     |
+| Podcast audio files   | Podcast's own servers (Megaphone, Spotify)     |
+| Login info            | Firebase Authentication                        |
+
+
+HOW IT WORKS WHEN YOU USE IT
+----------------------------
+
+1. You open the app -> Browser loads website from GitHub Pages
+2. You search "Bill Simmons" -> App asks iTunes API -> Shows podcasts
+3. You subscribe -> Saved to browser's localStorage
+4. You click "Sync Now" -> Uploads subscription list to Firebase
+5. You play an episode -> Streams audio from podcast's server
+6. You download an episode -> Audio saved to browser storage (IndexedDB)
+
+
+IF ANOTHER PERSON WANTS TO USE THIS APP
+---------------------------------------
+
+Option A: Use YOUR app (easy)
+   - Just go to dwbonham.github.io/dougcast
+   - They sign into YOUR Firebase project
+   - Their data is in YOUR Firebase database
+   - Downloads stay on their own device
+
+Option B: Make their own copy (better)
+   1. "Fork" your GitHub repository (copy the code)
+   2. Create their own Firebase project
+   3. Update the Firebase config keys in the code
+   4. Enable GitHub Pages on their repo
+   Then they have their own separate app.
+
+
+SIMPLE DIAGRAM
+--------------
+
+YOUR PHONE/COMPUTER
+    |
+    v loads website from
+GITHUB PAGES (free hosting)
+    |
+    v app code asks
+iTUNES API ---------> podcast search results
+RSS2JSON API -------> episode lists
+PODCAST SERVERS ----> actual audio files
+    |
+    v saves your data to
+FIREBASE (Google) --> subscriptions sync across devices
+YOUR BROWSER -------> downloaded episodes (local only)
+
+
+KEY POINTS
+----------
+
+- GitHub = stores and hosts the code (free)
+- Firebase = login + cloud sync for subscriptions (free)
+- Downloads = stored in YOUR browser only, don't sync between devices
+- Audio files = streamed from podcast companies, not stored by us
+- Cost to you = $0
+
+
+FIREBASE CONFIG (for reference)
+-------------------------------
+
+Project: dougcast-9eb17
+API Key: AIzaSyANL62rPXmWku8DuJ2LYEgbmBVMf-gwmdg
+Auth Domain: dougcast-9eb17.firebaseapp.com
+Project ID: dougcast-9eb17
+
+
+GITHUB REPO
+-----------
+
+Repository: github.com/dwbonham/dougcast
+Live Site: dwbonham.github.io/dougcast
+
+
+MULTIPLE USERS & FIREBASE LIMITS
+---------------------------------
+
+When Someone Else Uses Your App:
+- They go to dwbonham.github.io/dougcast
+- They sign in with THEIR own Google account
+- Their data is stored in YOUR Firebase project (dougcast-9eb17)
+- Each user's data is separate (they can only see their own subscriptions)
+
+So: Your Firebase account, their Google login, separate data.
+
+
+Firebase Free Tier Limits (Spark Plan):
+
+| Resource           | Free Limit    | What it means                          |
+|--------------------|---------------|----------------------------------------|
+| Users              | Unlimited     | No limit on sign-ups                   |
+| Firestore Storage  | 1 GB          | ~10,000+ users worth of subscriptions  |
+| Firestore Reads    | 50,000/day    | Loading subscriptions                  |
+| Firestore Writes   | 20,000/day    | Clicking "Sync Now"                    |
+| Bandwidth          | 10 GB/month   | Data transferred                       |
+
+
+What This Means Practically:
+- 5-10 friends using it? No problem
+- 100 users? Still fine
+- 1,000+ daily users? Might hit limits
+- Goes viral? Need to upgrade to paid plan
+
+
+If You Hit Limits:
+- Firebase stops working temporarily (won't charge you)
+- You'll see "quota exceeded" errors
+- Fix by waiting until next day (limits reset) or upgrading to Blaze plan
+
+
+Your Cost Right Now: $0
+Well within free limits for personal use and sharing with friends.
+
+
+Privacy Note:
+As Firebase project owner, you CAN technically see other users'
+subscription lists in Firebase console (but not their Google passwords).
+For true separation, each person would need their own Firebase project.
+
+
+---
+
+Created: January 2026
