@@ -289,17 +289,18 @@
 
         const searchPodcasts = async (query) => {
             try {
-                const response = await fetch(`${CORS_PROXY}${encodeURIComponent(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=podcast&entity=podcast&limit=25`)}`);
+                const searchUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=podcast&entity=podcast&limit=25`;
+                const response = await fetch(`${CORS_PROXY}${encodeURIComponent(searchUrl)}`);
                 const data = await response.json();
                 const parsed = JSON.parse(data.contents);
-                return parsed.results.map(result => ({
-                    id: result.collectionId.toString(),
-                    name: result.collectionName,
-                    artist: result.artistName,
-                    image: result.artworkUrl600 || result.artworkUrl100,
-                    feedUrl: result.feedUrl,
+                return (parsed.results || []).map(result => ({
+                    id: result.collectionId?.toString() || Math.random().toString(),
+                    name: result.collectionName || 'Unknown',
+                    artist: result.artistName || 'Unknown',
+                    image: result.artworkUrl600 || result.artworkUrl100 || '',
+                    feedUrl: result.feedUrl || '',
                     genre: result.primaryGenreName || 'Podcast',
-                    trackCount: result.trackCount
+                    trackCount: result.trackCount || 0
                 }));
             } catch (error) {
                 console.error('Error searching:', error);
@@ -793,18 +794,22 @@
             );
         };
 
-        const SearchView = ({ onSelectPodcast }) => {
-            const [query, setQuery] = useState('');
-            const [results, setResults] = useState([]);
+        const SearchView = ({ onSelectPodcast, searchState, setSearchState }) => {
+            const { query, results, searched } = searchState;
             const [loading, setLoading] = useState(false);
-            const [searched, setSearched] = useState(false);
-            const handleSearch = async () => { if (!query.trim()) return; setLoading(true); setSearched(true); const data = await searchPodcasts(query); setResults(data); setLoading(false); };
+            const handleSearch = async () => {
+                if (!query.trim()) return;
+                setLoading(true);
+                const data = await searchPodcasts(query);
+                setSearchState({ query, results: data, searched: true });
+                setLoading(false);
+            };
 
             return (
                 <div className="p-4 pb-40 hide-scrollbar overflow-y-auto h-full">
                     <h1 className="text-3xl font-display font-semibold mb-6 text-cream-100">Search</h1>
                     <div className="flex gap-2 mb-6">
-                        <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} placeholder="Search podcasts..." className="flex-1 bg-dark-800 border border-dark-700 rounded-lg px-4 py-3 text-cream-100 placeholder-cream-600 focus:outline-none focus:border-racing-700 transition-colors" />
+                        <input type="text" value={query} onChange={(e) => setSearchState({ ...searchState, query: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} placeholder="Search podcasts..." className="flex-1 bg-dark-800 border border-dark-700 rounded-lg px-4 py-3 text-cream-100 placeholder-cream-600 focus:outline-none focus:border-racing-700 transition-colors" />
                         <button onClick={handleSearch} className="px-6 py-3 bg-racing-700 hover:bg-racing-600 text-cream-100 rounded-lg font-medium active:scale-95 transition-all">Search</button>
                     </div>
                     {loading ? (<div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-racing-600 border-t-transparent rounded-full animate-spin"></div></div>)
@@ -817,44 +822,181 @@
 
         const LibraryView = () => {
             const { playEpisode } = useAudio();
-            const [episodes, setEpisodes] = useState([]);
+            const [activeTab, setActiveTab] = useState('recent');
+            const [recentEpisodes, setRecentEpisodes] = useState([]);
             const [downloads, setDownloads] = useState([]);
-            const loadLibrary = () => setEpisodes(getLibraryEpisodes());
-            useEffect(() => {
-                loadLibrary();
-                loadDownloads();
-                window.addEventListener('dougcast-sync', loadLibrary);
-                return () => window.removeEventListener('dougcast-sync', loadLibrary);
-            }, []);
+            const [loading, setLoading] = useState(true);
+            const [visibleCount, setVisibleCount] = useState(30);
+            const [selectMode, setSelectMode] = useState(false);
+            const [selectedDownloads, setSelectedDownloads] = useState(new Set());
+
+            const loadRecentEpisodes = async () => {
+                setLoading(true);
+                const subscriptions = getSubscriptions();
+                if (subscriptions.length === 0) {
+                    setRecentEpisodes([]);
+                    setLoading(false);
+                    return;
+                }
+                const allEpisodes = [];
+                const feedPromises = subscriptions.map(async (podcast) => {
+                    if (!podcast.feedUrl) return [];
+                    try {
+                        const episodes = await fetchPodcastFeed(podcast.feedUrl);
+                        return episodes.slice(0, 10).map(ep => ({ episode: ep, podcast }));
+                    } catch (e) { return []; }
+                });
+                const results = await Promise.all(feedPromises);
+                results.forEach(eps => allEpisodes.push(...eps));
+                allEpisodes.sort((a, b) => new Date(b.episode.rawDate) - new Date(a.episode.rawDate));
+                setRecentEpisodes(allEpisodes);
+                setLoading(false);
+            };
+
             const loadDownloads = async () => { const data = await getAllDownloads(); setDownloads(data); };
-            const handleDeleteEpisode = (episodeId) => { const updated = episodes.filter(e => e.episode.id !== episodeId); saveLibraryEpisodes(updated); setEpisodes(updated); };
+
+            useEffect(() => {
+                loadRecentEpisodes();
+                loadDownloads();
+                window.addEventListener('dougcast-sync', loadRecentEpisodes);
+                return () => window.removeEventListener('dougcast-sync', loadRecentEpisodes);
+            }, []);
+
             const handleDeleteDownload = async (id) => { await deleteEpisodeBlob(id); loadDownloads(); };
+            const handleMassDelete = async () => {
+                for (const id of selectedDownloads) { await deleteEpisodeBlob(id); }
+                setSelectedDownloads(new Set());
+                setSelectMode(false);
+                loadDownloads();
+            };
+            const toggleSelectDownload = (id) => {
+                setSelectedDownloads(prev => {
+                    const next = new Set(prev);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                });
+            };
+            const selectAllDownloads = () => { setSelectedDownloads(new Set(downloads.map(d => d.id))); };
             const downloadedIds = new Set(downloads.map(d => d.id));
-            const handleDownload = async (episode, podcast) => { try { const audioResponse = await fetch(episode.audioUrl); const blob = await audioResponse.blob(); await saveEpisodeBlob(episode.id, blob, { title: episode.title, podcastName: podcast.name, podcastImage: podcast.image }); loadDownloads(); } catch (error) { console.error('Download failed:', error); alert('Download failed.'); }};
-            const sortedEpisodes = [...episodes].sort((a, b) => new Date(b.episode.rawDate) - new Date(a.episode.rawDate));
+            const handleDownload = async (episode, podcast) => {
+                try {
+                    const audioResponse = await fetch(episode.audioUrl);
+                    const blob = await audioResponse.blob();
+                    await saveEpisodeBlob(episode.id, blob, { title: episode.title, podcastName: podcast.name, podcastImage: podcast.image });
+                    loadDownloads();
+                } catch (error) { console.error('Download failed:', error); alert('Download failed.'); }
+            };
+            const visibleEpisodes = recentEpisodes.slice(0, visibleCount);
 
             return (
                 <div className="p-4 pb-40 hide-scrollbar overflow-y-auto h-full">
-                    <h1 className="text-3xl font-display font-semibold mb-6 text-cream-100">Library</h1>
-                    {sortedEpisodes.length === 0 ? (<div className="text-center py-16"><p className="text-cream-500 font-light">No episodes in your library</p><p className="text-cream-600 text-sm mt-2">Add episodes from podcast pages</p></div>)
-                    : (<div className="space-y-1">{sortedEpisodes.map(({ episode, podcast }) => (
-                        <div key={episode.id} className="bg-dark-800/50 rounded-lg p-4">
-                            <div className="flex items-start gap-3">
-                                <button onClick={() => playEpisode(episode, podcast)} className="w-12 h-12 bg-racing-700 hover:bg-racing-600 rounded-full flex items-center justify-center active:scale-95 transition-all text-cream-100 shadow-lg flex-shrink-0"><Icons.Play /></button>
-                                <img src={podcast.image} alt="" className="w-14 h-14 rounded-md object-cover shadow-md flex-shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-xs text-racing-400 font-medium mb-1">{podcast.name}</p>
-                                    <h4 className="font-display font-medium text-cream-100 line-clamp-2">{episode.title}</h4>
-                                    <p className="text-xs text-cream-500 mt-1">{episode.pubDate}</p>
+                    <h1 className="text-3xl font-display font-semibold mb-4 text-cream-100">Library</h1>
+
+                    {/* Tabs */}
+                    <div className="flex gap-2 mb-6">
+                        <button onClick={() => { setActiveTab('recent'); setSelectMode(false); }} className={`flex-1 py-2.5 rounded-lg font-medium transition-all ${activeTab === 'recent' ? 'bg-racing-700 text-cream-100' : 'bg-dark-800 text-cream-400'}`}>Recent</button>
+                        <button onClick={() => setActiveTab('downloaded')} className={`flex-1 py-2.5 rounded-lg font-medium transition-all ${activeTab === 'downloaded' ? 'bg-racing-700 text-cream-100' : 'bg-dark-800 text-cream-400'}`}>Downloaded ({downloads.length})</button>
+                    </div>
+
+                    {activeTab === 'recent' ? (
+                        <>
+                            {loading ? (
+                                <div className="flex flex-col items-center justify-center py-16">
+                                    <div className="w-8 h-8 border-2 border-racing-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+                                    <p className="text-cream-500 text-sm">Loading episodes from subscriptions...</p>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    {downloadedIds.has(episode.id) ? (<button onClick={() => handleDeleteDownload(episode.id)} className="w-10 h-10 bg-racing-800/50 rounded-full flex items-center justify-center text-racing-400"><Icons.Check /></button>)
-                                    : (<button onClick={() => handleDownload(episode, podcast)} className="w-10 h-10 bg-dark-700 hover:bg-dark-600 rounded-full flex items-center justify-center text-cream-400"><Icons.Download /></button>)}
-                                    <button onClick={() => handleDeleteEpisode(episode.id)} className="w-10 h-10 bg-dark-700 hover:bg-red-900/30 rounded-full flex items-center justify-center text-cream-400 hover:text-red-400 transition-colors"><Icons.Trash /></button>
+                            ) : visibleEpisodes.length === 0 ? (
+                                <div className="text-center py-16">
+                                    <p className="text-cream-500 font-light">No recent episodes</p>
+                                    <p className="text-cream-600 text-sm mt-2">Subscribe to podcasts to see their latest episodes here</p>
                                 </div>
-                            </div>
-                        </div>
-                    ))}</div>)}
+                            ) : (
+                                <>
+                                    <div className="space-y-1">
+                                        {visibleEpisodes.map(({ episode, podcast }) => (
+                                            <div key={episode.id} className="bg-dark-800/50 rounded-lg p-4">
+                                                <div className="flex items-start gap-3">
+                                                    <button onClick={() => playEpisode(episode, podcast)} className="w-12 h-12 bg-racing-700 hover:bg-racing-600 rounded-full flex items-center justify-center active:scale-95 transition-all text-cream-100 shadow-lg flex-shrink-0"><Icons.Play /></button>
+                                                    <img src={podcast.image} alt="" className="w-14 h-14 rounded-md object-cover shadow-md flex-shrink-0" />
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-xs text-racing-400 font-medium mb-1">{podcast.name}</p>
+                                                        <h4 className="font-display font-medium text-cream-100 line-clamp-2">{episode.title}</h4>
+                                                        <p className="text-xs text-cream-500 mt-1">{episode.pubDate}</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        {downloadedIds.has(episode.id) ? (
+                                                            <div className="w-10 h-10 bg-racing-800/50 rounded-full flex items-center justify-center text-racing-400"><Icons.Check /></div>
+                                                        ) : (
+                                                            <button onClick={() => handleDownload(episode, podcast)} className="w-10 h-10 bg-dark-700 hover:bg-dark-600 rounded-full flex items-center justify-center text-cream-400"><Icons.Download /></button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {visibleCount < recentEpisodes.length && (
+                                        <button onClick={() => setVisibleCount(prev => prev + 30)} className="w-full mt-4 py-3 bg-dark-800 hover:bg-dark-700 text-cream-300 rounded-lg font-medium transition-colors">
+                                            Load More ({recentEpisodes.length - visibleCount} remaining)
+                                        </button>
+                                    )}
+                                </>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            {/* Downloaded Tab Controls */}
+                            {downloads.length > 0 && (
+                                <div className="flex items-center justify-between mb-4">
+                                    {selectMode ? (
+                                        <>
+                                            <button onClick={() => { setSelectMode(false); setSelectedDownloads(new Set()); }} className="text-cream-400 text-sm">Cancel</button>
+                                            <div className="flex items-center gap-3">
+                                                <button onClick={selectAllDownloads} className="text-racing-400 text-sm font-medium">Select All</button>
+                                                <button onClick={handleMassDelete} disabled={selectedDownloads.size === 0} className="px-4 py-2 bg-red-900/50 hover:bg-red-800/50 text-red-300 rounded-lg text-sm font-medium disabled:opacity-50 transition-colors">
+                                                    Delete ({selectedDownloads.size})
+                                                </button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <button onClick={() => setSelectMode(true)} className="text-cream-400 text-sm hover:text-cream-200 transition-colors">Select</button>
+                                    )}
+                                </div>
+                            )}
+
+                            {downloads.length === 0 ? (
+                                <div className="text-center py-16">
+                                    <p className="text-cream-500 font-light">No downloaded episodes</p>
+                                    <p className="text-cream-600 text-sm mt-2">Download episodes for offline listening</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-1">
+                                    {downloads.map((download) => (
+                                        <div key={download.id} className={`bg-dark-800/50 rounded-lg p-4 ${selectMode && selectedDownloads.has(download.id) ? 'ring-2 ring-racing-500' : ''}`}>
+                                            <div className="flex items-start gap-3">
+                                                {selectMode ? (
+                                                    <button onClick={() => toggleSelectDownload(download.id)} className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${selectedDownloads.has(download.id) ? 'bg-racing-700 text-cream-100' : 'bg-dark-700 text-cream-400'}`}>
+                                                        {selectedDownloads.has(download.id) && <Icons.Check />}
+                                                    </button>
+                                                ) : (
+                                                    <button onClick={() => playEpisode({ id: download.id, title: download.metadata?.title, audioUrl: '' }, { name: download.metadata?.podcastName, image: download.metadata?.podcastImage })} className="w-12 h-12 bg-racing-700 hover:bg-racing-600 rounded-full flex items-center justify-center active:scale-95 transition-all text-cream-100 shadow-lg flex-shrink-0"><Icons.Play /></button>
+                                                )}
+                                                {download.metadata?.podcastImage && <img src={download.metadata.podcastImage} alt="" className="w-14 h-14 rounded-md object-cover shadow-md flex-shrink-0" />}
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-xs text-racing-400 font-medium mb-1">{download.metadata?.podcastName || 'Unknown'}</p>
+                                                    <h4 className="font-display font-medium text-cream-100 line-clamp-2">{download.metadata?.title || 'Unknown Episode'}</h4>
+                                                    <p className="text-xs text-cream-500 mt-1">{new Date(download.savedAt).toLocaleDateString()}</p>
+                                                </div>
+                                                {!selectMode && (
+                                                    <button onClick={() => handleDeleteDownload(download.id)} className="w-10 h-10 bg-dark-700 hover:bg-red-900/30 rounded-full flex items-center justify-center text-cream-400 hover:text-red-400 transition-colors"><Icons.Trash /></button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </>
+                    )}
                 </div>
             );
         };
@@ -979,12 +1121,13 @@
             const [selectedPodcast, setSelectedPodcast] = useState(null);
             const [showFullPlayer, setShowFullPlayer] = useState(false);
             const [showProfile, setShowProfile] = useState(false);
+            const [searchState, setSearchState] = useState({ query: '', results: [], searched: false });
 
             const renderContent = () => {
                 if (selectedPodcast) return <PodcastDetailView podcast={selectedPodcast} onBack={() => setSelectedPodcast(null)} />;
                 switch (activeTab) {
                     case 'home': return <HomeView onSelectPodcast={setSelectedPodcast} />;
-                    case 'search': return <SearchView onSelectPodcast={setSelectedPodcast} />;
+                    case 'search': return <SearchView onSelectPodcast={setSelectedPodcast} searchState={searchState} setSearchState={setSearchState} />;
                     case 'library': return <LibraryView />;
                     case 'subscriptions': return <SubscriptionsView onSelectPodcast={setSelectedPodcast} />;
                     case 'stats': return <StatsView />;
