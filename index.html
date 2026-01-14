@@ -857,10 +857,11 @@
             const loadDownloads = async () => { const data = await getAllDownloads(); setDownloads(data); };
 
             useEffect(() => {
-                loadRecentEpisodes();
+                loadRecentEpisodes(true); // Always fetch fresh when tab opens
                 loadDownloads();
-                window.addEventListener('dougcast-sync', loadRecentEpisodes);
-                return () => window.removeEventListener('dougcast-sync', loadRecentEpisodes);
+                const handleSync = () => loadRecentEpisodes(true);
+                window.addEventListener('dougcast-sync', handleSync);
+                return () => window.removeEventListener('dougcast-sync', handleSync);
             }, []);
 
             const handleDeleteDownload = async (id) => { await deleteEpisodeBlob(id); loadDownloads(); };
