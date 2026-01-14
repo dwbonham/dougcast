@@ -267,20 +267,31 @@
         const savePlaybackState = (state) => localStorage.setItem('dougcast_playback', JSON.stringify(state));
 
         // ==================== API Functions ====================
-        const CORS_PROXY = 'https://corsproxy.io/?';
         const RSS2JSON_API = 'https://api.rss2json.com/v1/api.json?rss_url=';
+
+        // JSONP helper for iTunes API (avoids CORS issues)
+        const jsonp = (url) => {
+            return new Promise((resolve, reject) => {
+                const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
+                const script = document.createElement('script');
+                script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + callbackName;
+                script.onerror = () => { delete window[callbackName]; document.body.removeChild(script); reject(new Error('JSONP request failed')); };
+                window[callbackName] = (data) => { delete window[callbackName]; document.body.removeChild(script); resolve(data); };
+                document.body.appendChild(script);
+            });
+        };
 
         const fetchTrendingPodcasts = async () => {
             try {
-                const response = await fetch(`${CORS_PROXY}${encodeURIComponent('https://itunes.apple.com/us/rss/toppodcasts/limit=25/json')}`);
-                const parsed = await response.json();
-                return parsed.feed.entry.map((entry, index) => ({
-                    id: entry.id.attributes['im:id'],
-                    name: entry['im:name'].label,
-                    artist: entry['im:artist'].label,
-                    image: entry['im:image'][2].label,
-                    feedUrl: entry.link[0]?.attributes?.href || '',
-                    genre: entry.category?.attributes?.label || 'Podcast',
+                // Use JSONP for iTunes top podcasts
+                const data = await jsonp('https://itunes.apple.com/search?term=podcast&media=podcast&entity=podcast&limit=25&sort=popular');
+                return (data.results || []).map((result, index) => ({
+                    id: result.collectionId?.toString() || index.toString(),
+                    name: result.collectionName || 'Unknown',
+                    artist: result.artistName || 'Unknown',
+                    image: result.artworkUrl600 || result.artworkUrl100 || '',
+                    feedUrl: result.feedUrl || '',
+                    genre: result.primaryGenreName || 'Podcast',
                     rank: index + 1,
                     popularityScore: Math.round(100 - (index * 3.5))
                 }));
@@ -293,9 +304,8 @@
         const searchPodcasts = async (query) => {
             try {
                 const searchUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=podcast&entity=podcast&limit=25`;
-                const response = await fetch(`${CORS_PROXY}${encodeURIComponent(searchUrl)}`);
-                const parsed = await response.json();
-                return (parsed.results || []).map(result => ({
+                const data = await jsonp(searchUrl);
+                return (data.results || []).map(result => ({
                     id: result.collectionId?.toString() || Math.random().toString(),
                     name: result.collectionName || 'Unknown',
                     artist: result.artistName || 'Unknown',
@@ -1077,9 +1087,8 @@
 
         const lookupPodcastFeedUrl = async (podcastId) => {
             try {
-                const response = await fetch(`${CORS_PROXY}${encodeURIComponent(`https://itunes.apple.com/lookup?id=${podcastId}`)}`);
-                const parsed = await response.json();
-                return parsed.results?.[0]?.feedUrl || '';
+                const data = await jsonp(`https://itunes.apple.com/lookup?id=${podcastId}`);
+                return data.results?.[0]?.feedUrl || '';
             } catch (error) {
                 console.error('Error looking up feed URL:', error);
                 return '';
