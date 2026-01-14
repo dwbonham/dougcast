@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dougcast-v4';
+const CACHE_NAME = 'dougcast-v5';
 const STATIC_ASSETS = [
     './',
     './index.html',
@@ -64,6 +64,7 @@ self.addEventListener('fetch', (event) => {
     if (url.href.includes('api.allorigins.win') ||
         url.href.includes('api.codetabs.com') ||
         url.href.includes('corsproxy.io') ||
+        url.href.includes('api.rss2json.com') ||
         url.href.includes('itunes.apple.com')) {
         event.respondWith(
             fetch(request)
