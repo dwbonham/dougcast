@@ -332,6 +332,30 @@
             return parts.length > 0 ? parts : [{ type: 'text', content: text }];
         };
 
+        // Fast feed fetch using rss2json (limited to 10 items, good for Library)
+        const fetchPodcastFeedFast = async (feedUrl) => {
+            try {
+                const response = await fetch(`${RSS2JSON_API}${encodeURIComponent(feedUrl)}&_=${Date.now()}`);
+                const data = await response.json();
+                if (data.status !== 'ok') return [];
+                return (data.items || []).map((item, index) => ({
+                    id: `${feedUrl}-${index}-${item.guid || index}`,
+                    title: item.title || 'Untitled Episode',
+                    description: (item.description || '').replace(/<[^>]*>/g, ''),
+                    fullDescription: (item.content || item.description || '').replace(/<[^>]*>/g, ''),
+                    audioUrl: item.enclosure?.link || '',
+                    pubDate: item.pubDate ? new Date(item.pubDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Unknown',
+                    rawDate: item.pubDate ? new Date(item.pubDate) : new Date(),
+                    duration: item.enclosure?.duration ? `${Math.floor(item.enclosure.duration / 60)}:${String(item.enclosure.duration % 60).padStart(2, '0')}` : '00:00',
+                    size: 0
+                })).filter(ep => ep.audioUrl);
+            } catch (error) {
+                console.error('Error fetching feed (fast):', error);
+                return [];
+            }
+        };
+
+        // Full feed fetch using CORS proxy (all episodes, for podcast detail view)
         const fetchPodcastFeed = async (feedUrl, bustCache = false) => {
             try {
                 const cacheParam = bustCache ? `&_t=${Date.now()}` : '';
@@ -845,15 +869,20 @@
                     return;
                 }
                 const allEpisodes = [];
+                // Use fast API for Library (10 episodes per podcast, but faster)
                 const feedPromises = subscriptions.map(async (podcast) => {
                     if (!podcast.feedUrl) return [];
                     try {
-                        const episodes = await fetchPodcastFeed(podcast.feedUrl, forceRefresh);
+                        const episodes = await fetchPodcastFeedFast(podcast.feedUrl);
                         return episodes.map(ep => ({ episode: ep, podcast }));
-                    } catch (e) { return []; }
+                    } catch (e) {
+                        console.error('Failed to fetch:', podcast.name, e);
+                        return [];
+                    }
                 });
                 const results = await Promise.all(feedPromises);
                 results.forEach(eps => allEpisodes.push(...eps));
+                // Sort all episodes by date (newest first)
                 allEpisodes.sort((a, b) => new Date(b.episode.rawDate) - new Date(a.episode.rawDate));
                 setRecentEpisodes(allEpisodes);
                 setLoading(false);
