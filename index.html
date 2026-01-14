@@ -330,9 +330,10 @@
             return parts.length > 0 ? parts : [{ type: 'text', content: text }];
         };
 
-        const fetchPodcastFeed = async (feedUrl) => {
+        const fetchPodcastFeed = async (feedUrl, bustCache = false) => {
             try {
-                const response = await fetch(`${CORS_PROXY}${encodeURIComponent(feedUrl)}`);
+                const cacheParam = bustCache ? `&_t=${Date.now()}` : '';
+                const response = await fetch(`${CORS_PROXY}${encodeURIComponent(feedUrl)}${cacheParam}`);
                 const data = await response.json();
                 const parser = new DOMParser();
                 const xml = parser.parseFromString(data.contents, 'text/xml');
@@ -830,7 +831,7 @@
             const [selectMode, setSelectMode] = useState(false);
             const [selectedDownloads, setSelectedDownloads] = useState(new Set());
 
-            const loadRecentEpisodes = async () => {
+            const loadRecentEpisodes = async (forceRefresh = false) => {
                 setLoading(true);
                 const subscriptions = getSubscriptions();
                 if (subscriptions.length === 0) {
@@ -842,7 +843,7 @@
                 const feedPromises = subscriptions.map(async (podcast) => {
                     if (!podcast.feedUrl) return [];
                     try {
-                        const episodes = await fetchPodcastFeed(podcast.feedUrl);
+                        const episodes = await fetchPodcastFeed(podcast.feedUrl, forceRefresh);
                         return episodes.slice(0, 10).map(ep => ({ episode: ep, podcast }));
                     } catch (e) { return []; }
                 });
@@ -893,7 +894,7 @@
                 <div className="p-4 pb-40 hide-scrollbar overflow-y-auto h-full">
                     <div className="flex items-center justify-between mb-4">
                         <h1 className="text-3xl font-display font-semibold text-cream-100">Library</h1>
-                        <button onClick={() => { loadRecentEpisodes(); loadDownloads(); }} disabled={loading} className="w-10 h-10 bg-dark-800 hover:bg-dark-700 rounded-full flex items-center justify-center text-cream-400 transition-colors disabled:opacity-50">
+                        <button onClick={() => { loadRecentEpisodes(true); loadDownloads(); }} disabled={loading} className="w-10 h-10 bg-dark-800 hover:bg-dark-700 rounded-full flex items-center justify-center text-cream-400 transition-colors disabled:opacity-50" title="Refresh">
                             <svg className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                         </button>
                     </div>
