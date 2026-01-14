@@ -891,7 +891,12 @@
 
             return (
                 <div className="p-4 pb-40 hide-scrollbar overflow-y-auto h-full">
-                    <h1 className="text-3xl font-display font-semibold mb-4 text-cream-100">Library</h1>
+                    <div className="flex items-center justify-between mb-4">
+                        <h1 className="text-3xl font-display font-semibold text-cream-100">Library</h1>
+                        <button onClick={() => { loadRecentEpisodes(); loadDownloads(); }} disabled={loading} className="w-10 h-10 bg-dark-800 hover:bg-dark-700 rounded-full flex items-center justify-center text-cream-400 transition-colors disabled:opacity-50">
+                            <svg className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                        </button>
+                    </div>
 
                     {/* Tabs */}
                     <div className="flex gap-2 mb-6">
@@ -1067,24 +1072,56 @@
             );
         };
 
+        const lookupPodcastFeedUrl = async (podcastId) => {
+            try {
+                const response = await fetch(`${CORS_PROXY}${encodeURIComponent(`https://itunes.apple.com/lookup?id=${podcastId}`)}`);
+                const data = await response.json();
+                const parsed = JSON.parse(data.contents);
+                return parsed.results?.[0]?.feedUrl || '';
+            } catch (error) {
+                console.error('Error looking up feed URL:', error);
+                return '';
+            }
+        };
+
         const PodcastDetailView = ({ podcast, onBack }) => {
             const [episodes, setEpisodes] = useState([]);
             const [loading, setLoading] = useState(true);
             const [isSubscribed, setIsSubscribed] = useState(false);
             const [downloadedIds, setDownloadedIds] = useState(new Set());
             const [downloadingIds, setDownloadingIds] = useState(new Set());
+            const [currentPodcast, setCurrentPodcast] = useState(podcast);
 
             useEffect(() => {
+                const loadPodcast = async () => {
+                    setLoading(true);
+                    let feedUrl = podcast.feedUrl;
+
+                    // If no feedUrl or it looks like an iTunes URL, look it up
+                    if (!feedUrl || feedUrl.includes('itunes.apple.com') || feedUrl.includes('apple.com')) {
+                        feedUrl = await lookupPodcastFeedUrl(podcast.id);
+                        if (feedUrl) {
+                            setCurrentPodcast({ ...podcast, feedUrl });
+                        }
+                    }
+
+                    if (feedUrl) {
+                        const eps = await fetchPodcastFeed(feedUrl);
+                        setEpisodes(eps);
+                    }
+                    setLoading(false);
+                };
+
                 const subs = getSubscriptions();
                 setIsSubscribed(subs.some(s => s.id === podcast.id));
-                if (podcast.feedUrl) { fetchPodcastFeed(podcast.feedUrl).then(data => { setEpisodes(data); setLoading(false); }); } else { setLoading(false); }
+                loadPodcast();
                 loadDownloadedIds();
             }, [podcast]);
 
             const loadDownloadedIds = async () => { const downloads = await getAllDownloads(); setDownloadedIds(new Set(downloads.map(d => d.id))); };
-            const handleSubscribe = () => { const subs = getSubscriptions(); if (isSubscribed) { const updated = subs.filter(s => s.id !== podcast.id); saveSubscriptions(updated); setIsSubscribed(false); } else { subs.push(podcast); saveSubscriptions(subs); setIsSubscribed(true); }};
-            const handleAddToLibrary = (episode, podcast) => { const library = getLibraryEpisodes(); if (!library.some(e => e.episode.id === episode.id)) { library.push({ episode, podcast }); saveLibraryEpisodes(library); }};
-            const handleDownload = async (episode) => { setDownloadingIds(prev => new Set([...prev, episode.id])); try { const audioResponse = await fetch(episode.audioUrl); const blob = await audioResponse.blob(); await saveEpisodeBlob(episode.id, blob, { title: episode.title, podcastName: podcast.name, podcastImage: podcast.image }); setDownloadedIds(prev => new Set([...prev, episode.id])); } catch (error) { console.error('Download failed:', error); alert('Download failed.'); } setDownloadingIds(prev => { const next = new Set(prev); next.delete(episode.id); return next; });};
+            const handleSubscribe = () => { const subs = getSubscriptions(); if (isSubscribed) { const updated = subs.filter(s => s.id !== currentPodcast.id); saveSubscriptions(updated); setIsSubscribed(false); } else { subs.push(currentPodcast); saveSubscriptions(subs); setIsSubscribed(true); }};
+            const handleAddToLibrary = (episode) => { const library = getLibraryEpisodes(); if (!library.some(e => e.episode.id === episode.id)) { library.push({ episode, podcast: currentPodcast }); saveLibraryEpisodes(library); }};
+            const handleDownload = async (episode) => { setDownloadingIds(prev => new Set([...prev, episode.id])); try { const audioResponse = await fetch(episode.audioUrl); const blob = await audioResponse.blob(); await saveEpisodeBlob(episode.id, blob, { title: episode.title, podcastName: currentPodcast.name, podcastImage: currentPodcast.image }); setDownloadedIds(prev => new Set([...prev, episode.id])); } catch (error) { console.error('Download failed:', error); alert('Download failed.'); } setDownloadingIds(prev => { const next = new Set(prev); next.delete(episode.id); return next; });};
             const handleDelete = async (episodeId) => { await deleteEpisodeBlob(episodeId); setDownloadedIds(prev => { const next = new Set(prev); next.delete(episodeId); return next; });};
 
             return (
@@ -1108,7 +1145,7 @@
                         <h2 className="text-lg font-display font-medium mb-4 text-cream-300 tracking-wide">Episodes</h2>
                         {loading ? (<div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-racing-600 border-t-transparent rounded-full animate-spin"></div></div>)
                         : episodes.length === 0 ? (<p className="text-cream-500 text-center py-8 font-light">No episodes found</p>)
-                        : (episodes.map(episode => (<EpisodeRow key={episode.id} episode={episode} podcast={podcast} isDownloaded={downloadedIds.has(episode.id)} isDownloading={downloadingIds.has(episode.id)} onDownload={handleDownload} onDelete={handleDelete} onAddToLibrary={handleAddToLibrary} />)))}
+                        : (episodes.map(episode => (<EpisodeRow key={episode.id} episode={episode} podcast={currentPodcast} isDownloaded={downloadedIds.has(episode.id)} isDownloading={downloadingIds.has(episode.id)} onDownload={handleDownload} onDelete={handleDelete} onAddToLibrary={() => handleAddToLibrary(episode)} />)))}
                     </div>
                 </div>
             );
